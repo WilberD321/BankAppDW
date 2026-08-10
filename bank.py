@@ -52,6 +52,9 @@ class Bank:
     def get_account(self, account_id: str) -> Account | None:
         return self._accounts.get(account_id)
 
+    def get_accounts(self) -> List[Account]:
+        return list(self._accounts.values())
+
     def find_accounts_by_customer(self, customer_id: str) -> List[Account]:
         cust = self.get_customer(customer_id)
         if cust is None:
@@ -74,23 +77,3 @@ class Bank:
     def __str__(self) -> str:
         return f"Bank(name={self._name}, customers={len(self._customers)}, accounts={len(self._accounts)})"
 
-
-if __name__ == "__main__":
-    # Quick example usage
-    c = Customer("c001", "Alice", "alice@example.com")
-    a1 = Account("a100", c, 150.0)
-    a2 = Account.from_owner_name("a101", "c001", 200.0)
-
-    bank = Bank("Demo Bank")
-    bank.add_customer(c)
-    bank.add_account(a1)
-    bank.add_account(a2)
-
-    a1.deposit(50)
-    try:
-        a1.withdraw(300)
-    except ValueError:
-        pass
-
-    print(bank)
-    print(bank.find_accounts_by_customer("c001"))
