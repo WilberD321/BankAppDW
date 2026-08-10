@@ -34,3 +34,7 @@ venv.bak/
 
 # Claude Code local settings
 .claude/
+
+# Postman
+.postman/
+postman/
