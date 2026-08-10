@@ -31,3 +31,6 @@ venv/
 ENV/
 env/
 venv.bak/
+
+# Claude Code local settings
+.claude/
