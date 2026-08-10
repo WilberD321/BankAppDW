@@ -60,3 +60,6 @@ class Customer:
     def __eq__(self, other: object) -> bool:
         return isinstance(other, Customer) and self._id == other._id
 
+    def __hash__(self) -> int:
+        return hash(self._id)
+

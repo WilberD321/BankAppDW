@@ -30,11 +30,12 @@ def prompt_float(text: str) -> float:
 
 def list_customers(bank: Bank) -> None:
     print("Customers:")
-    if not bank._customers:
+    customers = bank.get_customers()
+    if not customers:
         print("  (none)")
         return
-    for cid, cust in bank._customers.items():
-        print(f"  {cid}: {cust.name} <{cust.email}>")
+    for cust in customers:
+        print(f"  {cust.id}: {cust.name} <{cust.email}>")
 
 
 def list_accounts(cust: Customer) -> None:

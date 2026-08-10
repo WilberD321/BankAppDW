@@ -25,6 +25,9 @@ class Bank:
     def get_customer(self, customer_id: str) -> Customer | None:
         return self._customers.get(customer_id)
 
+    def get_customers(self) -> List[Customer]:
+        return list(self._customers.values())
+
     def add_account(self, account: Account) -> None:
         if account.id in self._accounts:
             raise ValueError("Account already exists")

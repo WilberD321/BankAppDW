@@ -15,9 +15,12 @@ class Account:
     """
 
     def __init__(self, account_id: str, owner: 'Customer | str', balance: float = 0.0):
+        balance = float(balance)
+        if balance < 0:
+            raise ValueError("Initial balance cannot be negative")
         self._id = str(account_id)
         self._owner: 'Customer | str' = owner
-        self._balance = float(balance)
+        self._balance = balance
 
     @classmethod
     def from_owner_name(cls, account_id: str, owner_name: str, balance: float = 0.0):
@@ -60,6 +63,9 @@ class Account:
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, Account) and self._id == other._id
+
+    def __hash__(self) -> int:
+        return hash(self._id)
 
     def __add__(self, other: Union['Account', float, int]) -> float:
         """Support adding two accounts (sum balances) or adding a numeric amount to balance."""
