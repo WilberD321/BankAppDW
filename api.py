@@ -19,7 +19,7 @@ class CustomerOut(BaseModel):
 
 
 class CustomerCreate(BaseModel):
-    id: str
+    id: str | None = None
     name: str
     email: str | None = None
 
@@ -37,7 +37,7 @@ class AccountOut(BaseModel):
 
 
 class AccountCreate(BaseModel):
-    id: str
+    id: str | None = None
     owner_id: str
     branch_id: str
     balance: float = Field(default=0.0, ge=0)
@@ -56,6 +56,35 @@ class TransactionOut(BaseModel):
     amount: float
     type: str
     timestamp: datetime
+
+
+def _next_id(collection, prefix: str) -> str:
+    """Scan for the highest existing '{prefix}NNN' id and return the next one, e.g. c001 -> c002."""
+    max_num = 0
+    for doc in collection.find({"_id": {"$regex": f"^{prefix}\\d+$"}}, {"_id": 1}):
+        max_num = max(max_num, int(doc["_id"][len(prefix):]))
+    return f"{prefix}{max_num + 1:03d}"
+
+
+def _insert_with_id(collection, prefix: str, explicit_id: str | None, fields: dict, conflict_detail: str) -> dict:
+    if explicit_id:
+        doc = {"_id": explicit_id, **fields}
+        try:
+            collection.insert_one(doc)
+        except DuplicateKeyError as exc:
+            raise HTTPException(status_code=409, detail=conflict_detail) from exc
+        return doc
+
+    # No id given: generate the next one in sequence. Retry a few times in case
+    # of a race with another request generating the same id concurrently.
+    for _ in range(5):
+        doc = {"_id": _next_id(collection, prefix), **fields}
+        try:
+            collection.insert_one(doc)
+            return doc
+        except DuplicateKeyError:
+            continue
+    raise HTTPException(status_code=500, detail="Failed to generate a unique id, please try again")
 
 
 def to_customer_out(doc: dict) -> CustomerOut:
@@ -84,11 +113,13 @@ def list_customers():
 
 @app.post("/api/v1/customers", response_model=CustomerOut, status_code=201)
 def create_customer(payload: CustomerCreate):
-    doc = {"_id": payload.id, "name": payload.name, "email": payload.email}
-    try:
-        customers_collection().insert_one(doc)
-    except DuplicateKeyError as exc:
-        raise HTTPException(status_code=409, detail="Customer already exists") from exc
+    doc = _insert_with_id(
+        customers_collection(),
+        "c",
+        payload.id,
+        {"name": payload.name, "email": payload.email},
+        "Customer already exists",
+    )
     return to_customer_out(doc)
 
 
@@ -135,16 +166,13 @@ def list_accounts(owner_id: str | None = None, branch_id: str | None = None, min
 def create_account(payload: AccountCreate):
     if customers_collection().find_one({"_id": payload.owner_id}) is None:
         raise HTTPException(status_code=400, detail="Owner customer id not found: %s" % payload.owner_id)
-    doc = {
-        "_id": payload.id,
-        "owner_id": payload.owner_id,
-        "branch_id": payload.branch_id,
-        "balance": payload.balance,
-    }
-    try:
-        accounts_collection().insert_one(doc)
-    except DuplicateKeyError as exc:
-        raise HTTPException(status_code=409, detail="Account already exists") from exc
+    doc = _insert_with_id(
+        accounts_collection(),
+        "a",
+        payload.id,
+        {"owner_id": payload.owner_id, "branch_id": payload.branch_id, "balance": payload.balance},
+        "Account already exists",
+    )
     return to_account_out(doc)
 
 
