@@ -35,6 +35,10 @@ venv.bak/
 # Claude Code local settings
 .claude/
 
+# Environment variables (contains MongoDB credentials)
+.env
+
 # Postman
 .postman/
 postman/
+postman-export/

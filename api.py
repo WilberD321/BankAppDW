@@ -1,22 +1,15 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, time, timezone
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from pymongo.errors import DuplicateKeyError
 
-from account import Account
-from bank import Bank
-from customer import Customer
+from db import accounts_collection, customers_collection, get_client, transactions_collection
 
 app = FastAPI(title="BankAppDW API")
-
-bank = Bank("My Bank")
-bank.add_customer(Customer("c001", "Alice", "alice@example.com"))
-bank.add_customer(Customer("c002", "Bob", "bob@example.com"))
-
-_transactions: list["TransactionOut"] = []
 
 
 class CustomerOut(BaseModel):
@@ -39,19 +32,21 @@ class CustomerUpdate(BaseModel):
 class AccountOut(BaseModel):
     id: str
     owner_id: str
+    branch_id: str
     balance: float
 
 
 class AccountCreate(BaseModel):
     id: str
     owner_id: str
-    balance: float = 0.0
+    branch_id: str
+    balance: float = Field(default=0.0, ge=0)
 
 
 class TransferRequest(BaseModel):
     from_account_id: str
     to_account_id: str
-    amount: float
+    amount: float = Field(gt=0)
 
 
 class TransactionOut(BaseModel):
@@ -63,105 +58,140 @@ class TransactionOut(BaseModel):
     timestamp: datetime
 
 
-def to_customer_out(customer: Customer) -> CustomerOut:
-    return CustomerOut(id=customer.id, name=customer.name, email=customer.email)
+def to_customer_out(doc: dict) -> CustomerOut:
+    return CustomerOut(id=doc["_id"], name=doc["name"], email=doc.get("email"))
 
 
-def to_account_out(account: Account) -> AccountOut:
-    owner_id = account.owner.id if isinstance(account.owner, Customer) else account.owner
-    return AccountOut(id=account.id, owner_id=owner_id, balance=account.balance)
+def to_account_out(doc: dict) -> AccountOut:
+    return AccountOut(id=doc["_id"], owner_id=doc["owner_id"], branch_id=doc["branch_id"], balance=doc["balance"])
+
+
+def to_transaction_out(doc: dict) -> TransactionOut:
+    return TransactionOut(
+        id=doc["_id"],
+        from_account_id=doc["from_account_id"],
+        to_account_id=doc["to_account_id"],
+        amount=doc["amount"],
+        type=doc["type"],
+        timestamp=doc["timestamp"],
+    )
 
 
 @app.get("/api/v1/customers", response_model=list[CustomerOut])
 def list_customers():
-    return [to_customer_out(c) for c in bank.get_customers()]
+    return [to_customer_out(doc) for doc in customers_collection().find()]
 
 
 @app.post("/api/v1/customers", response_model=CustomerOut, status_code=201)
 def create_customer(payload: CustomerCreate):
-    customer = Customer(payload.id, payload.name, payload.email)
+    doc = {"_id": payload.id, "name": payload.name, "email": payload.email}
     try:
-        bank.add_customer(customer)
-    except ValueError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return to_customer_out(customer)
+        customers_collection().insert_one(doc)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Customer already exists") from exc
+    return to_customer_out(doc)
 
 
 @app.get("/api/v1/customers/{customer_id}", response_model=CustomerOut)
 def get_customer(customer_id: str):
-    customer = bank.get_customer(customer_id)
-    if customer is None:
+    doc = customers_collection().find_one({"_id": customer_id})
+    if doc is None:
         raise HTTPException(status_code=404, detail="Customer not found")
-    return to_customer_out(customer)
+    return to_customer_out(doc)
 
 
 @app.put("/api/v1/customers/{customer_id}", response_model=CustomerOut)
 def update_customer(customer_id: str, payload: CustomerUpdate):
-    customer = bank.get_customer(customer_id)
-    if customer is None:
+    updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    if updates:
+        customers_collection().update_one({"_id": customer_id}, {"$set": updates})
+    doc = customers_collection().find_one({"_id": customer_id})
+    if doc is None:
         raise HTTPException(status_code=404, detail="Customer not found")
-    if payload.name is not None:
-        customer.name = payload.name
-    if payload.email is not None:
-        customer.email = payload.email
-    return to_customer_out(customer)
+    return to_customer_out(doc)
 
 
 @app.delete("/api/v1/customers/{customer_id}", status_code=204)
 def deactivate_customer(customer_id: str):
-    if bank.get_customer(customer_id) is None:
+    result = customers_collection().delete_one({"_id": customer_id})
+    if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Customer not found")
-    bank.remove_customer(customer_id)
+    accounts_collection().delete_many({"owner_id": customer_id})
 
 
 @app.get("/api/v1/accounts", response_model=list[AccountOut])
-def list_accounts(owner_id: str | None = None, min_balance: float | None = None):
-    accounts = bank.find_accounts_by_customer(owner_id) if owner_id is not None else bank.get_accounts()
+def list_accounts(owner_id: str | None = None, branch_id: str | None = None, min_balance: float | None = None):
+    query: dict = {}
+    if owner_id is not None:
+        query["owner_id"] = owner_id
+    if branch_id is not None:
+        query["branch_id"] = branch_id
     if min_balance is not None:
-        accounts = [a for a in accounts if a.balance >= min_balance]
-    return [to_account_out(a) for a in accounts]
+        query["balance"] = {"$gte": min_balance}
+    return [to_account_out(doc) for doc in accounts_collection().find(query)]
 
 
 @app.post("/api/v1/accounts", response_model=AccountOut, status_code=201)
 def create_account(payload: AccountCreate):
-    if bank.get_account(payload.id) is not None:
-        raise HTTPException(status_code=409, detail="Account already exists")
+    if customers_collection().find_one({"_id": payload.owner_id}) is None:
+        raise HTTPException(status_code=400, detail="Owner customer id not found: %s" % payload.owner_id)
+    doc = {
+        "_id": payload.id,
+        "owner_id": payload.owner_id,
+        "branch_id": payload.branch_id,
+        "balance": payload.balance,
+    }
     try:
-        account = Account(payload.id, payload.owner_id, payload.balance)
-        bank.add_account(account)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return to_account_out(account)
+        accounts_collection().insert_one(doc)
+    except DuplicateKeyError as exc:
+        raise HTTPException(status_code=409, detail="Account already exists") from exc
+    return to_account_out(doc)
+
+
+@app.delete("/api/v1/accounts/{account_id}", status_code=204)
+def delete_account(account_id: str):
+    result = accounts_collection().delete_one({"_id": account_id})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Account not found")
 
 
 @app.get("/api/v1/transactions", response_model=list[TransactionOut])
 def list_transactions(start_date: date | None = None, type: str | None = None):
-    results = _transactions
+    query: dict = {}
     if start_date is not None:
-        results = [t for t in results if t.timestamp.date() >= start_date]
+        query["timestamp"] = {"$gte": datetime.combine(start_date, time.min, tzinfo=timezone.utc)}
     if type is not None:
-        results = [t for t in results if t.type == type]
-    return results
+        query["type"] = type
+    return [to_transaction_out(doc) for doc in transactions_collection().find(query)]
 
 
 @app.post("/api/v1/transactions/transfer", response_model=TransactionOut, status_code=201)
 def transfer(payload: TransferRequest):
-    from_account = bank.get_account(payload.from_account_id)
-    to_account = bank.get_account(payload.to_account_id)
-    if from_account is None or to_account is None:
-        raise HTTPException(status_code=404, detail="Account not found")
-    try:
-        from_account.withdraw(payload.amount)
-        to_account.deposit(payload.amount)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    transaction = TransactionOut(
-        id=str(uuid.uuid4()),
-        from_account_id=from_account.id,
-        to_account_id=to_account.id,
-        amount=payload.amount,
-        type="TRANSFER",
-        timestamp=datetime.now(timezone.utc),
-    )
-    _transactions.append(transaction)
-    return transaction
+    accounts = accounts_collection()
+    with get_client().start_session() as session:
+        with session.start_transaction():
+            from_account = accounts.find_one({"_id": payload.from_account_id}, session=session)
+            to_account = accounts.find_one({"_id": payload.to_account_id}, session=session)
+            if from_account is None or to_account is None:
+                raise HTTPException(status_code=404, detail="Account not found")
+            if from_account["balance"] < payload.amount:
+                raise HTTPException(status_code=400, detail="Insufficient funds")
+
+            accounts.update_one(
+                {"_id": payload.from_account_id}, {"$inc": {"balance": -payload.amount}}, session=session
+            )
+            accounts.update_one(
+                {"_id": payload.to_account_id}, {"$inc": {"balance": payload.amount}}, session=session
+            )
+
+            transaction_doc = {
+                "_id": str(uuid.uuid4()),
+                "from_account_id": payload.from_account_id,
+                "to_account_id": payload.to_account_id,
+                "amount": payload.amount,
+                "type": "TRANSFER",
+                "timestamp": datetime.now(timezone.utc),
+            }
+            transactions_collection().insert_one(transaction_doc, session=session)
+
+    return to_transaction_out(transaction_doc)
