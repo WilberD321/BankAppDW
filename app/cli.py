@@ -2,9 +2,9 @@ from __future__ import annotations
 import sys
 from typing import Optional
 
-from bank import Bank
-from customer import Customer
-from account import Account
+from app.services.bank import Bank
+from app.models.customer import Customer
+from app.models.account import Account
 
 
 def prompt(text: str) -> str:

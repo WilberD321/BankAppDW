@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import Dict, List, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from account import Account
+    from app.models.account import Account
 
 
 class Customer:

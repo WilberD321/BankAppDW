@@ -2,10 +2,10 @@ import builtins
 
 import pytest
 
-import cli
-from bank import Bank
-from customer import Customer
-from account import Account
+from app import cli
+from app.services.bank import Bank
+from app.models.customer import Customer
+from app.models.account import Account
 
 
 def _feed_inputs(monkeypatch, values):

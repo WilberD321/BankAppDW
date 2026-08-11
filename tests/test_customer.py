@@ -1,7 +1,7 @@
 import pytest
 
-from customer import Customer
-from account import Account
+from app.models.customer import Customer
+from app.models.account import Account
 
 
 def test_create_customer():

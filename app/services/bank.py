@@ -1,8 +1,8 @@
 from __future__ import annotations
 from typing import Dict, List
 
-from customer import Customer
-from account import Account
+from app.models.customer import Customer
+from app.models.account import Account
 
 
 class Bank:

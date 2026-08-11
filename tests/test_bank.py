@@ -1,8 +1,8 @@
 import pytest
 
-from bank import Bank
-from customer import Customer
-from account import Account
+from app.services.bank import Bank
+from app.models.customer import Customer
+from app.models.account import Account
 
 
 @pytest.fixture

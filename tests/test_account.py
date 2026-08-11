@@ -1,7 +1,7 @@
 import pytest
 
-from account import Account
-from customer import Customer
+from app.models.account import Account
+from app.models.customer import Customer
 
 
 def test_create_account_with_customer_owner():
