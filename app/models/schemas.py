@@ -36,6 +36,10 @@ class AccountCreate(BaseModel):
     balance: float = Field(default=0.0, ge=0)
 
 
+class AccountUpdate(BaseModel):
+    branch_id: str | None = None
+
+
 class TransferRequest(BaseModel):
     from_account_id: str
     to_account_id: str

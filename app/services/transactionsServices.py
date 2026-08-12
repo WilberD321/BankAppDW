@@ -23,13 +23,22 @@ def to_transaction_out(row: TransactionRow) -> TransactionOut:
     )
 
 
-def list_transactions(start_date: date | None = None, type: str | None = None) -> list[TransactionOut]:
+def list_transactions(
+    start_date: date | None = None,
+    type: str | None = None,
+    from_account_id: str | None = None,
+    to_account_id: str | None = None,
+) -> list[TransactionOut]:
     with get_session() as session:
         query = select(TransactionRow)
         if start_date is not None:
             query = query.where(TransactionRow.timestamp >= datetime.combine(start_date, time.min, tzinfo=timezone.utc))
         if type is not None:
             query = query.where(TransactionRow.type == type)
+        if from_account_id is not None:
+            query = query.where(TransactionRow.from_account_id == from_account_id)
+        if to_account_id is not None:
+            query = query.where(TransactionRow.to_account_id == to_account_id)
         rows = session.execute(query).scalars().all()
         return [to_transaction_out(row) for row in rows]
 

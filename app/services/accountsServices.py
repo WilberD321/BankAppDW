@@ -4,7 +4,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.models.orm import AccountRow, CustomerRow
-from app.models.schemas import AccountCreate, AccountOut
+from app.models.schemas import AccountCreate, AccountOut, AccountUpdate
 from app.services.db import get_session
 from app.services.ids import insert_with_id
 
@@ -28,6 +28,14 @@ def list_accounts(
         return [to_account_out(row) for row in rows]
 
 
+def get_account(account_id: str) -> AccountOut:
+    with get_session() as session:
+        row = session.get(AccountRow, account_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        return to_account_out(row)
+
+
 def create_account(payload: AccountCreate) -> AccountOut:
     with get_session() as session:
         if session.get(CustomerRow, payload.owner_id) is None:
@@ -41,6 +49,19 @@ def create_account(payload: AccountCreate) -> AccountOut:
             "Account already exists",
         )
         session.commit()
+        return to_account_out(row)
+
+
+def update_account(account_id: str, payload: AccountUpdate) -> AccountOut:
+    updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
+    with get_session() as session:
+        row = session.get(AccountRow, account_id)
+        if row is None:
+            raise HTTPException(status_code=404, detail="Account not found")
+        for key, value in updates.items():
+            setattr(row, key, value)
+        session.commit()
+        session.refresh(row)
         return to_account_out(row)
 
 

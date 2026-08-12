@@ -11,8 +11,15 @@ router = APIRouter(prefix="/api/v1/transactions", tags=["transactions"])
 
 
 @router.get("", response_model=list[TransactionOut])
-def list_transactions(start_date: date | None = None, type: str | None = None):
-    return transactions_service.list_transactions(start_date=start_date, type=type)
+def list_transactions(
+    start_date: date | None = None,
+    type: str | None = None,
+    from_account_id: str | None = None,
+    to_account_id: str | None = None,
+):
+    return transactions_service.list_transactions(
+        start_date=start_date, type=type, from_account_id=from_account_id, to_account_id=to_account_id
+    )
 
 
 @router.post("/transfer", response_model=TransactionOut, status_code=201)
