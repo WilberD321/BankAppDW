@@ -31,8 +31,8 @@ class TransactionRow(Base):
     __tablename__ = "transactions"
 
     id: Mapped[str] = mapped_column(primary_key=True)
-    from_account_id: Mapped[str]
-    to_account_id: Mapped[str]
+    from_account_id: Mapped[str | None]
+    to_account_id: Mapped[str | None]
     amount: Mapped[float] = mapped_column(Numeric)
     type: Mapped[str]
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))

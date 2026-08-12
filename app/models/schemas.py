@@ -42,10 +42,20 @@ class TransferRequest(BaseModel):
     amount: float = Field(gt=0)
 
 
+class DepositRequest(BaseModel):
+    account_id: str
+    amount: float = Field(gt=0)
+
+
+class WithdrawRequest(BaseModel):
+    account_id: str
+    amount: float = Field(gt=0)
+
+
 class TransactionOut(BaseModel):
     id: str
-    from_account_id: str
-    to_account_id: str
+    from_account_id: str | None
+    to_account_id: str | None
     amount: float
     type: str
     timestamp: datetime
