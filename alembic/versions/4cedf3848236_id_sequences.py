@@ -23,14 +23,18 @@ def upgrade() -> None:
     op.execute("CREATE SEQUENCE account_id_seq")
 
     # Seed each sequence so the next nextval() continues right after the highest
-    # id already in the table (falls back to 0 -> next call returns 1 on an empty table).
+    # id already in the table. Sequences have MINVALUE 1, so setval(seq, 0) is
+    # invalid on an empty table -- use the 3-arg form (value, is_called=false)
+    # instead, which makes the *next* nextval() return exactly 1.
     op.execute(
         "SELECT setval('customer_id_seq', "
-        "COALESCE((SELECT MAX(substring(id from 2)::int) FROM customers WHERE id ~ '^c[0-9]+$'), 0))"
+        "COALESCE((SELECT MAX(substring(id from 2)::int) FROM customers WHERE id ~ '^c[0-9]+$'), 1), "
+        "(SELECT MAX(substring(id from 2)::int) FROM customers WHERE id ~ '^c[0-9]+$') IS NOT NULL)"
     )
     op.execute(
         "SELECT setval('account_id_seq', "
-        "COALESCE((SELECT MAX(substring(id from 2)::int) FROM accounts WHERE id ~ '^a[0-9]+$'), 0))"
+        "COALESCE((SELECT MAX(substring(id from 2)::int) FROM accounts WHERE id ~ '^a[0-9]+$'), 1), "
+        "(SELECT MAX(substring(id from 2)::int) FROM accounts WHERE id ~ '^a[0-9]+$') IS NOT NULL)"
     )
 
 
