@@ -13,9 +13,12 @@ def to_customer_out(row: CustomerRow) -> CustomerOut:
     return CustomerOut(id=row.id, name=row.name, email=row.email)
 
 
-def list_customers() -> list[CustomerOut]:
+def list_customers(name: str | None = None) -> list[CustomerOut]:
     with get_session() as session:
-        rows = session.execute(select(CustomerRow)).scalars().all()
+        query = select(CustomerRow)
+        if name is not None:
+            query = query.where(CustomerRow.name.ilike(f"%{name}%"))
+        rows = session.execute(query).scalars().all()
         return [to_customer_out(row) for row in rows]
 
 

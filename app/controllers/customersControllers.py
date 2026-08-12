@@ -9,8 +9,8 @@ router = APIRouter(prefix="/api/v1/customers", tags=["customers"])
 
 
 @router.get("", response_model=list[CustomerOut])
-def list_customers():
-    return customers_service.list_customers()
+def list_customers(name: str | None = None):
+    return customers_service.list_customers(name=name)
 
 
 @router.post("", response_model=CustomerOut, status_code=201)
