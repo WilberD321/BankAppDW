@@ -2,9 +2,18 @@ from __future__ import annotations
 
 from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 
 from app.models.orm import CustomerRow, UserRow
-from app.models.schemas import LoginRequest, TokenResponse, UserCreate, UserOut
+from app.models.schemas import (
+    AdminUpdateUserRequest,
+    AuthenticatedUser,
+    LoginRequest,
+    SelfPasswordChangeRequest,
+    TokenResponse,
+    UserCreate,
+    UserOut,
+)
 from app.services.auth import create_access_token, hash_password, verify_password
 from app.services.db import get_session
 from app.services.ids import insert_with_id
@@ -47,5 +56,46 @@ def create_login(payload: UserCreate) -> UserOut:
             },
             "Username already taken",
         )
+        session.commit()
+        return to_user_out(row)
+
+
+def admin_update_customer_login(
+    customer_id: str, payload: AdminUpdateUserRequest, current_user: AuthenticatedUser
+) -> UserOut:
+    with get_session() as session:
+        admin_row = session.get(UserRow, current_user.id)
+        if admin_row is None or not verify_password(payload.admin_password, admin_row.password_hash):
+            raise HTTPException(status_code=401, detail="Invalid password")
+
+        if payload.username is None and payload.new_password is None:
+            raise HTTPException(status_code=400, detail="Must provide username and/or new_password")
+
+        row = session.execute(select(UserRow).where(UserRow.customer_id == customer_id)).scalar_one_or_none()
+        if row is None:
+            raise HTTPException(status_code=404, detail="No login found for customer: %s" % customer_id)
+
+        if payload.username is not None:
+            row.username = payload.username
+        if payload.new_password is not None:
+            row.password_hash = hash_password(payload.new_password)
+
+        try:
+            session.flush()
+        except IntegrityError as exc:
+            session.rollback()
+            raise HTTPException(status_code=409, detail="Username already taken") from exc
+
+        session.commit()
+        return to_user_out(row)
+
+
+def change_own_password(payload: SelfPasswordChangeRequest, current_user: AuthenticatedUser) -> UserOut:
+    with get_session() as session:
+        row = session.get(UserRow, current_user.id)
+        if row is None or not verify_password(payload.current_password, row.password_hash):
+            raise HTTPException(status_code=401, detail="Current password is incorrect")
+
+        row.password_hash = hash_password(payload.new_password)
         session.commit()
         return to_user_out(row)

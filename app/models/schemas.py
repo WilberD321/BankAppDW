@@ -93,3 +93,14 @@ class AuthenticatedUser(BaseModel):
     username: str
     role: str
     customer_id: str | None
+
+
+class AdminUpdateUserRequest(BaseModel):
+    admin_password: str
+    username: str | None = None
+    new_password: str | None = None
+
+
+class SelfPasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str

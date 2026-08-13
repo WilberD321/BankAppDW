@@ -99,3 +99,152 @@ def test_create_login_requires_admin(admin_client, customer_client_for):
     )
 
     assert response.status_code == 403
+
+
+def test_admin_update_customer_username(admin_client, admin_user):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+    admin_client.post("/api/v1/auth/users", json={"customer_id": "c001", "username": "alice", "password": "alicepass123"})
+
+    response = admin_client.put(
+        "/api/v1/auth/users/by-customer/c001",
+        json={"admin_password": admin_user["password"], "username": "alice_new"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["username"] == "alice_new"
+
+    old_username_login = admin_client.post("/api/v1/auth/login", json={"username": "alice", "password": "alicepass123"})
+    assert old_username_login.status_code == 401
+
+    new_username_login = admin_client.post(
+        "/api/v1/auth/login", json={"username": "alice_new", "password": "alicepass123"}
+    )
+    assert new_username_login.status_code == 200
+
+
+def test_admin_update_customer_password(admin_client, admin_user):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+    admin_client.post("/api/v1/auth/users", json={"customer_id": "c001", "username": "alice", "password": "alicepass123"})
+
+    response = admin_client.put(
+        "/api/v1/auth/users/by-customer/c001",
+        json={"admin_password": admin_user["password"], "new_password": "newalicepass456"},
+    )
+
+    assert response.status_code == 200
+
+    old_password_login = admin_client.post("/api/v1/auth/login", json={"username": "alice", "password": "alicepass123"})
+    assert old_password_login.status_code == 401
+
+    new_password_login = admin_client.post(
+        "/api/v1/auth/login", json={"username": "alice", "password": "newalicepass456"}
+    )
+    assert new_password_login.status_code == 200
+
+
+def test_admin_update_customer_login_wrong_admin_password(admin_client):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+    admin_client.post("/api/v1/auth/users", json={"customer_id": "c001", "username": "alice", "password": "alicepass123"})
+
+    response = admin_client.put(
+        "/api/v1/auth/users/by-customer/c001",
+        json={"admin_password": "wrong", "username": "alice_new"},
+    )
+
+    assert response.status_code == 401
+
+
+def test_admin_update_customer_login_not_found(admin_client, admin_user):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+
+    response = admin_client.put(
+        "/api/v1/auth/users/by-customer/c001",
+        json={"admin_password": admin_user["password"], "username": "alice_new"},
+    )
+
+    assert response.status_code == 404
+
+
+def test_admin_update_customer_login_requires_a_field(admin_client, admin_user):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+    admin_client.post("/api/v1/auth/users", json={"customer_id": "c001", "username": "alice", "password": "alicepass123"})
+
+    response = admin_client.put(
+        "/api/v1/auth/users/by-customer/c001", json={"admin_password": admin_user["password"]}
+    )
+
+    assert response.status_code == 400
+
+
+def test_admin_update_customer_login_username_conflict(admin_client, admin_user):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+    admin_client.post("/api/v1/customers", json={"id": "c002", "name": "Bob"})
+    admin_client.post("/api/v1/auth/users", json={"customer_id": "c001", "username": "alice", "password": "alicepass123"})
+    admin_client.post("/api/v1/auth/users", json={"customer_id": "c002", "username": "bob", "password": "bobpass123"})
+
+    response = admin_client.put(
+        "/api/v1/auth/users/by-customer/c002",
+        json={"admin_password": admin_user["password"], "username": "alice"},
+    )
+
+    assert response.status_code == 409
+
+
+def test_admin_update_customer_login_requires_admin(admin_client, customer_client_for):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+    customer_client = customer_client_for("c001")
+
+    response = customer_client.put(
+        "/api/v1/auth/users/by-customer/c001",
+        json={"admin_password": "irrelevant", "username": "hacked"},
+    )
+
+    assert response.status_code == 403
+
+
+def test_self_password_change_admin(admin_client, admin_user):
+    response = admin_client.put(
+        "/api/v1/auth/me/password",
+        json={"current_password": admin_user["password"], "new_password": "newadminpass456"},
+    )
+
+    assert response.status_code == 200
+
+    old_password_login = admin_client.post("/api/v1/auth/login", json=admin_user)
+    assert old_password_login.status_code == 401
+
+    new_password_login = admin_client.post(
+        "/api/v1/auth/login", json={"username": admin_user["username"], "password": "newadminpass456"}
+    )
+    assert new_password_login.status_code == 200
+
+
+def test_self_password_change_customer(admin_client, customer_client_for):
+    admin_client.post("/api/v1/customers", json={"id": "c001", "name": "Alice"})
+    customer_client = customer_client_for("c001", username="alice", password="alicepass123")
+
+    response = customer_client.put(
+        "/api/v1/auth/me/password",
+        json={"current_password": "alicepass123", "new_password": "newalicepass456"},
+    )
+
+    assert response.status_code == 200
+
+    old_password_login = customer_client.post(
+        "/api/v1/auth/login", json={"username": "alice", "password": "alicepass123"}
+    )
+    assert old_password_login.status_code == 401
+
+    new_password_login = customer_client.post(
+        "/api/v1/auth/login", json={"username": "alice", "password": "newalicepass456"}
+    )
+    assert new_password_login.status_code == 200
+
+
+def test_self_password_change_wrong_current_password(admin_client):
+    response = admin_client.put(
+        "/api/v1/auth/me/password",
+        json={"current_password": "wrong", "new_password": "newadminpass456"},
+    )
+
+    assert response.status_code == 401
