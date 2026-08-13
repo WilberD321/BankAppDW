@@ -4,7 +4,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.models.orm import AccountRow, CustomerRow
-from app.models.schemas import AccountCreate, AccountOut, AccountUpdate
+from app.models.schemas import AccountCreate, AccountOut, AccountUpdate, AuthenticatedUser
+from app.services.authz import require_self_or_admin
 from app.services.db import get_session
 from app.services.ids import insert_with_id
 
@@ -14,8 +15,13 @@ def to_account_out(row: AccountRow) -> AccountOut:
 
 
 def list_accounts(
-    owner_id: str | None = None, branch_id: str | None = None, min_balance: float | None = None
+    current_user: AuthenticatedUser,
+    owner_id: str | None = None,
+    branch_id: str | None = None,
+    min_balance: float | None = None,
 ) -> list[AccountOut]:
+    if current_user.role == "customer":
+        owner_id = current_user.customer_id
     with get_session() as session:
         query = select(AccountRow)
         if owner_id is not None:
@@ -28,11 +34,12 @@ def list_accounts(
         return [to_account_out(row) for row in rows]
 
 
-def get_account(account_id: str) -> AccountOut:
+def get_account(account_id: str, current_user: AuthenticatedUser) -> AccountOut:
     with get_session() as session:
         row = session.get(AccountRow, account_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Account not found")
+        require_self_or_admin(current_user, row.owner_id)
         return to_account_out(row)
 
 

@@ -36,3 +36,13 @@ class TransactionRow(Base):
     amount: Mapped[float] = mapped_column(Numeric)
     type: Mapped[str]
     timestamp: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UserRow(Base):
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(primary_key=True)
+    username: Mapped[str]
+    password_hash: Mapped[str]
+    role: Mapped[str]
+    customer_id: Mapped[str | None] = mapped_column(ForeignKey("customers.id"))

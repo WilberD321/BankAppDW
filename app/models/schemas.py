@@ -63,3 +63,33 @@ class TransactionOut(BaseModel):
     amount: float
     type: str
     timestamp: datetime
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class UserCreate(BaseModel):
+    customer_id: str
+    username: str
+    password: str
+
+
+class UserOut(BaseModel):
+    id: str
+    username: str
+    role: str
+    customer_id: str | None
+
+
+class AuthenticatedUser(BaseModel):
+    id: str
+    username: str
+    role: str
+    customer_id: str | None

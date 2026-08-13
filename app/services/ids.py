@@ -16,6 +16,7 @@ ModelT = TypeVar("ModelT", bound=Base)
 _SEQUENCES = {
     "c": "customer_id_seq",
     "a": "account_id_seq",
+    "u": "user_id_seq",
 }
 
 

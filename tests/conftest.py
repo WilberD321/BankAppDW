@@ -60,9 +60,10 @@ def reset_database(build_test_database):
     from app.services.db import get_session
 
     with get_session() as session:
-        session.execute(text("TRUNCATE customers, accounts, transactions"))
+        session.execute(text("TRUNCATE customers, accounts, transactions, users"))
         session.execute(text("ALTER SEQUENCE customer_id_seq RESTART WITH 1"))
         session.execute(text("ALTER SEQUENCE account_id_seq RESTART WITH 1"))
+        session.execute(text("ALTER SEQUENCE user_id_seq RESTART WITH 1"))
         session.commit()
 
 
@@ -73,3 +74,73 @@ def client():
     from app.main import app
 
     return TestClient(app)
+
+
+def _create_user(username: str, password: str, role: str, customer_id: str | None) -> None:
+    from app.models.orm import UserRow
+    from app.services.auth import hash_password
+    from app.services.db import get_session
+    from app.services.ids import insert_with_id
+
+    with get_session() as session:
+        insert_with_id(
+            session,
+            UserRow,
+            "u",
+            None,
+            {"username": username, "password_hash": hash_password(password), "role": role, "customer_id": customer_id},
+            "Username already taken",
+        )
+        session.commit()
+
+
+@pytest.fixture
+def admin_user():
+    """Insert an admin login directly (there's no HTTP way to create one)."""
+    username, password = "admin", "adminpass123"
+    _create_user(username, password, "admin", None)
+    return {"username": username, "password": password}
+
+
+@pytest.fixture
+def admin_token(client, admin_user):
+    response = client.post("/api/v1/auth/login", json=admin_user)
+    return response.json()["access_token"]
+
+
+@pytest.fixture
+def admin_headers(admin_token):
+    return {"Authorization": f"Bearer {admin_token}"}
+
+
+@pytest.fixture
+def admin_client(client, admin_headers):
+    client.headers.update(admin_headers)
+    return client
+
+
+@pytest.fixture
+def customer_client_for(client, admin_headers):
+    """Factory: given an existing customer id, create a login for them and return a client authenticated as them."""
+
+    def _make(customer_id: str, username: str | None = None, password: str = "customerpass123"):
+        from fastapi.testclient import TestClient
+
+        from app.main import app
+
+        username = username or f"user_{customer_id}"
+        create_response = client.post(
+            "/api/v1/auth/users",
+            json={"customer_id": customer_id, "username": username, "password": password},
+            headers=admin_headers,
+        )
+        assert create_response.status_code == 201, create_response.text
+
+        login_response = client.post("/api/v1/auth/login", json={"username": username, "password": password})
+        token = login_response.json()["access_token"]
+
+        customer_client = TestClient(app)
+        customer_client.headers.update({"Authorization": f"Bearer {token}"})
+        return customer_client
+
+    return _make

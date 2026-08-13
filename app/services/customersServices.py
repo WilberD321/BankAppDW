@@ -4,7 +4,8 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.models.orm import AccountRow, CustomerRow
-from app.models.schemas import CustomerCreate, CustomerOut, CustomerUpdate
+from app.models.schemas import AuthenticatedUser, CustomerCreate, CustomerOut, CustomerUpdate
+from app.services.authz import require_self_or_admin
 from app.services.db import get_session
 from app.services.ids import insert_with_id
 
@@ -36,20 +37,22 @@ def create_customer(payload: CustomerCreate) -> CustomerOut:
         return to_customer_out(row)
 
 
-def get_customer(customer_id: str) -> CustomerOut:
+def get_customer(customer_id: str, current_user: AuthenticatedUser) -> CustomerOut:
     with get_session() as session:
         row = session.get(CustomerRow, customer_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Customer not found")
+        require_self_or_admin(current_user, customer_id)
         return to_customer_out(row)
 
 
-def update_customer(customer_id: str, payload: CustomerUpdate) -> CustomerOut:
+def update_customer(customer_id: str, payload: CustomerUpdate, current_user: AuthenticatedUser) -> CustomerOut:
     updates = {k: v for k, v in payload.model_dump(exclude_unset=True).items() if v is not None}
     with get_session() as session:
         row = session.get(CustomerRow, customer_id)
         if row is None:
             raise HTTPException(status_code=404, detail="Customer not found")
+        require_self_or_admin(current_user, customer_id)
         for key, value in updates.items():
             setattr(row, key, value)
         session.commit()

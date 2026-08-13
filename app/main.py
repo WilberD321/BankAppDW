@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.controllers import accountsControllers, customersControllers, transactionsControllers
+from app.controllers import accountsControllers, authControllers, customersControllers, transactionsControllers
 
 app = FastAPI(title="BankAppDW API")
 
@@ -14,6 +14,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(authControllers.router)
 app.include_router(customersControllers.router)
 app.include_router(accountsControllers.router)
 app.include_router(transactionsControllers.router)

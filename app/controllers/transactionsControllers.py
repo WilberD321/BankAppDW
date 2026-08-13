@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from datetime import date
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
-from app.models.schemas import DepositRequest, TransactionOut, TransferRequest, WithdrawRequest
+from app.models.schemas import AuthenticatedUser, DepositRequest, TransactionOut, TransferRequest, WithdrawRequest
 from app.services import transactionsServices as transactions_service
+from app.services.authDeps import get_current_user
 
 router = APIRouter(prefix="/api/v1/transactions", tags=["transactions"])
 
@@ -16,22 +17,27 @@ def list_transactions(
     type: str | None = None,
     from_account_id: str | None = None,
     to_account_id: str | None = None,
+    current_user: AuthenticatedUser = Depends(get_current_user),
 ):
     return transactions_service.list_transactions(
-        start_date=start_date, type=type, from_account_id=from_account_id, to_account_id=to_account_id
+        current_user,
+        start_date=start_date,
+        type=type,
+        from_account_id=from_account_id,
+        to_account_id=to_account_id,
     )
 
 
 @router.post("/transfer", response_model=TransactionOut, status_code=201)
-def transfer(payload: TransferRequest):
-    return transactions_service.transfer(payload)
+def transfer(payload: TransferRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
+    return transactions_service.transfer(payload, current_user)
 
 
 @router.post("/deposit", response_model=TransactionOut, status_code=201)
-def deposit(payload: DepositRequest):
-    return transactions_service.deposit(payload)
+def deposit(payload: DepositRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
+    return transactions_service.deposit(payload, current_user)
 
 
 @router.post("/withdraw", response_model=TransactionOut, status_code=201)
-def withdraw(payload: WithdrawRequest):
-    return transactions_service.withdraw(payload)
+def withdraw(payload: WithdrawRequest, current_user: AuthenticatedUser = Depends(get_current_user)):
+    return transactions_service.withdraw(payload, current_user)

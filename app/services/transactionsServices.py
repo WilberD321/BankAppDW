@@ -5,10 +5,11 @@ from datetime import date, datetime, time, timezone
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.models.orm import AccountRow, TransactionRow
-from app.models.schemas import DepositRequest, TransactionOut, TransferRequest, WithdrawRequest
+from app.models.schemas import AuthenticatedUser, DepositRequest, TransactionOut, TransferRequest, WithdrawRequest
+from app.services.authz import require_self_or_admin
 from app.services.db import get_session
 
 
@@ -24,6 +25,7 @@ def to_transaction_out(row: TransactionRow) -> TransactionOut:
 
 
 def list_transactions(
+    current_user: AuthenticatedUser,
     start_date: date | None = None,
     type: str | None = None,
     from_account_id: str | None = None,
@@ -31,6 +33,13 @@ def list_transactions(
 ) -> list[TransactionOut]:
     with get_session() as session:
         query = select(TransactionRow)
+        if current_user.role == "customer":
+            owned_ids = session.execute(
+                select(AccountRow.id).where(AccountRow.owner_id == current_user.customer_id)
+            ).scalars().all()
+            query = query.where(
+                or_(TransactionRow.from_account_id.in_(owned_ids), TransactionRow.to_account_id.in_(owned_ids))
+            )
         if start_date is not None:
             query = query.where(TransactionRow.timestamp >= datetime.combine(start_date, time.min, tzinfo=timezone.utc))
         if type is not None:
@@ -43,12 +52,13 @@ def list_transactions(
         return [to_transaction_out(row) for row in rows]
 
 
-def transfer(payload: TransferRequest) -> TransactionOut:
+def transfer(payload: TransferRequest, current_user: AuthenticatedUser) -> TransactionOut:
     with get_session() as session:
         from_account = session.get(AccountRow, payload.from_account_id, with_for_update=True)
         to_account = session.get(AccountRow, payload.to_account_id, with_for_update=True)
         if from_account is None or to_account is None:
             raise HTTPException(status_code=404, detail="Account not found")
+        require_self_or_admin(current_user, from_account.owner_id)
         amount = Decimal(str(payload.amount))
         if from_account.balance < amount:
             raise HTTPException(status_code=400, detail="Insufficient funds")
@@ -70,11 +80,12 @@ def transfer(payload: TransferRequest) -> TransactionOut:
         return to_transaction_out(transaction_row)
 
 
-def deposit(payload: DepositRequest) -> TransactionOut:
+def deposit(payload: DepositRequest, current_user: AuthenticatedUser) -> TransactionOut:
     with get_session() as session:
         account = session.get(AccountRow, payload.account_id, with_for_update=True)
         if account is None:
             raise HTTPException(status_code=404, detail="Account not found")
+        require_self_or_admin(current_user, account.owner_id)
 
         account.balance += Decimal(str(payload.amount))
 
@@ -92,11 +103,12 @@ def deposit(payload: DepositRequest) -> TransactionOut:
         return to_transaction_out(transaction_row)
 
 
-def withdraw(payload: WithdrawRequest) -> TransactionOut:
+def withdraw(payload: WithdrawRequest, current_user: AuthenticatedUser) -> TransactionOut:
     with get_session() as session:
         account = session.get(AccountRow, payload.account_id, with_for_update=True)
         if account is None:
             raise HTTPException(status_code=404, detail="Account not found")
+        require_self_or_admin(current_user, account.owner_id)
         amount = Decimal(str(payload.amount))
         if account.balance < amount:
             raise HTTPException(status_code=400, detail="Insufficient funds")
