@@ -5,4 +5,4 @@ alembic
 psycopg2-binary
 python-dotenv
 pytest
-httpx2
+httpx
